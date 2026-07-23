@@ -32,13 +32,20 @@ public enum DS {
     public static func tracking(_ em: CGFloat, size: CGFloat) -> CGFloat { em * size }
 }
 
-private func adaptive(light: Color, dark: Color) -> Color {
+/// Builds a trait-adaptive color. MUST stay `nonisolated`: UIKit invokes the
+/// dynamic-provider closure on background render threads (e.g. during the
+/// scene transition when a system permission dialog appears). Under this
+/// module's MainActor default isolation, an isolated closure here trips the
+/// runtime isolation assertion and crashes with SIGTRAP.
+private nonisolated func adaptive(light: Color, dark: Color) -> Color {
     #if os(iOS)
-    Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
+    let lightColor = UIColor(light)
+    let darkColor = UIColor(dark)
+    return Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? darkColor : lightColor
     })
     #else
-    light
+    return light
     #endif
 }
 

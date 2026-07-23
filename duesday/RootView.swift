@@ -92,6 +92,15 @@ struct RootView: View {
         .task {
             scheduler.registerCategories()
             refreshReminders()
+            #if DEBUG
+            // Diagnostic hook: exercises the onboarding "Enable notifications"
+            // path without a tap, so the flow can be driven from automation.
+            if ProcessInfo.processInfo.arguments.contains("-duesday-auto-enable-notifications") {
+                await NotificationPermissionModel().request()
+                onboardingComplete = true
+                refreshReminders()
+            }
+            #endif
         }
     }
 
