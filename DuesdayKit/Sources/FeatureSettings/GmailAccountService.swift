@@ -33,8 +33,10 @@ public final class GmailAccountService {
     private let configuration: OAuthConfiguration?
     private static let logger = DuesdayLog.logger(category: "gmail-sync")
 
-    /// How many messages are fetched and analyzed per manual sync pass.
+    /// Messages fetched per search page.
     private let batchLimit = 25
+    /// Backfill pages processed per manual sync tap (≤100 messages).
+    private let pagesPerSync = 4
 
     public init(
         context: ModelContext,
@@ -81,23 +83,65 @@ public final class GmailAccountService {
 
     // MARK: - Sync
 
-    /// One manual/foreground sync pass. Incremental when a cursor exists,
-    /// falling back to the targeted backfill search.
+    /// One manual/foreground sync pass. The initial backfill pages through
+    /// the targeted search (up to `pagesPerSync` pages per tap, resuming from
+    /// the stored page token) so the whole 12-month window is eventually
+    /// covered; once the search is exhausted the cursor switches to Gmail
+    /// history for incremental updates.
     @discardableResult
-    public func sync(account: UserAccount) async throws -> Int {
+    public func sync(account: UserAccount) async throws -> SyncSummary {
         let provider = makeProvider(accountID: account.id)
-        var refs: [MessageRef] = []
-        var newCursor: String?
+        let ingestor = CandidateIngestor(context: context)
+        var state = SyncCursorState.parse(account.syncCursor)
+        var scanned = 0
+        var created = 0
+        var backfillComplete = true
 
         do {
-            switch try await provider.incrementalChanges(since: account.syncCursor) {
-            case .changes(let added, let cursor):
-                refs = added
-                newCursor = cursor
-            case .cursorExpired:
-                let page = try await provider.searchMessages(ProviderQuery(maxResults: batchLimit))
-                refs = page.refs
-                newCursor = try await provider.currentHistoryID()
+            pageLoop: for _ in 0..<pagesPerSync {
+                switch state {
+                case .backfill(let pageToken):
+                    let page = try await provider.searchMessages(
+                        ProviderQuery(maxResults: batchLimit, pageToken: pageToken)
+                    )
+                    let result = try await process(page.refs, provider: provider, ingestor: ingestor, accountID: account.id)
+                    scanned += result.scanned
+                    created += result.created
+
+                    if let next = page.nextPageToken {
+                        state = .backfill(pageToken: next)
+                        account.syncCursor = SyncCursorState.encodeBackfill(next)
+                        backfillComplete = false
+                    } else {
+                        // Historical sweep done — arm the incremental cursor.
+                        if let historyID = try await provider.currentHistoryID() {
+                            account.syncCursor = SyncCursorState.encodeIncremental(historyID)
+                        }
+                        backfillComplete = true
+                        break pageLoop
+                    }
+
+                case .incremental(let cursor):
+                    switch try await provider.incrementalChanges(since: cursor) {
+                    case .changes(let added, let newCursor):
+                        let result = try await process(
+                            Array(added.prefix(batchLimit * pagesPerSync)),
+                            provider: provider,
+                            ingestor: ingestor,
+                            accountID: account.id
+                        )
+                        scanned += result.scanned
+                        created += result.created
+                        account.syncCursor = SyncCursorState.encodeIncremental(newCursor)
+                    case .cursorExpired:
+                        // Gmail expired the history window — restart backfill.
+                        account.syncCursor = SyncCursorState.encodeBackfill(nil)
+                        state = .backfill(pageToken: nil)
+                        backfillComplete = false
+                        continue
+                    }
+                    break pageLoop
+                }
             }
         } catch EmailProviderError.authorizationExpired {
             account.connectionStatus = .expired
@@ -106,9 +150,22 @@ public final class GmailAccountService {
             throw EmailProviderError.authorizationExpired
         }
 
-        let ingestor = CandidateIngestor(context: context)
+        account.lastSyncDate = .now
+        account.connectionStatus = .connected
+        account.updatedAt = .now
+        try context.save()
+        Self.logger.info("Sync pass: scanned \(scanned, privacy: .public), created \(created, privacy: .public), backfillComplete \(backfillComplete, privacy: .public)")
+        return SyncSummary(scanned: scanned, created: created, backfillComplete: backfillComplete)
+    }
+
+    private func process(
+        _ refs: [MessageRef],
+        provider: GmailProvider,
+        ingestor: CandidateIngestor,
+        accountID: UUID
+    ) async throws -> (scanned: Int, created: Int) {
         var created = 0
-        for ref in refs.prefix(batchLimit) {
+        for ref in refs {
             let content = try await provider.messageContent(ref)
             let input = EmailMessageInput(
                 messageID: content.metadata.id,
@@ -120,18 +177,11 @@ public final class GmailAccountService {
             )
             // Pure, synchronous analysis; content is discarded right after.
             let outcome = DetectionPipeline.analyze(input)
-            if case .created = try ingestor.ingest(outcome, sourceAccountID: account.id) {
+            if case .created = try ingestor.ingest(outcome, sourceAccountID: accountID) {
                 created += 1
             }
         }
-
-        account.lastSyncDate = .now
-        if let newCursor { account.syncCursor = newCursor }
-        account.connectionStatus = .connected
-        account.updatedAt = .now
-        try context.save()
-        Self.logger.info("Sync finished: \(created, privacy: .public) new candidates from \(refs.count, privacy: .public) messages")
-        return created
+        return (refs.count, created)
     }
 
     // MARK: - Disconnect & data deletion

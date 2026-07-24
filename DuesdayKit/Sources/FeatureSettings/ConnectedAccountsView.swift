@@ -16,6 +16,8 @@ public struct ConnectedAccountsView: View {
     @State private var isSyncing: UUID?
     @State private var disconnectTarget: UserAccount?
     @State private var actionError: String?
+    /// Last sync pass result per account, so backfill progress is visible.
+    @State private var syncSummaries: [UUID: SyncSummary] = [:]
     @Environment(\.modelContext) private var modelContext
 
     public init() {}
@@ -103,6 +105,12 @@ public struct ConnectedAccountsView: View {
                     Text("Read-only · receipts and renewals only")
                         .font(.dsBody(11.5))
                         .foregroundStyle(Color.dsInkTertiary)
+                    if let summary = syncSummaries[account.id] {
+                        Text(summary.userDescription)
+                            .font(.dsBody(11.5))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.dsAccentDeep)
+                    }
                 }
                 Spacer()
             }
@@ -217,10 +225,12 @@ public struct ConnectedAccountsView: View {
         isSyncing = account.id
         Task {
             do {
+                let summary: SyncSummary
                 switch account.provider {
-                case .gmail: _ = try await gmailService.sync(account: account)
-                case .microsoft: _ = try await microsoftService.sync(account: account)
+                case .gmail: summary = try await gmailService.sync(account: account)
+                case .microsoft: summary = try await microsoftService.sync(account: account)
                 }
+                syncSummaries[account.id] = summary
                 Haptics.success()
             } catch {
                 actionError = error.localizedDescription
