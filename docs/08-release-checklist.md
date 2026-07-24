@@ -5,7 +5,7 @@
       begin restricted-scope (`gmail.readonly`) verification (privacy policy URL, demo video).
 - [ ] Microsoft Entra: app registration (public client, mobile redirect
       `duesday.oauth://microsoft`) → `DuesdayMicrosoftOAuthClientID`.
-- [ ] Apple Developer: production bundle ID (replace `duesday.duesday`), push
+- [ ] Apple Developer: production bundle ID (`com.browncode.duesday` configured), push
       entitlement when the backend ships, App Store Connect record.
 - [ ] Backend hosting: `DATABASE_URL`, `REDIS_URL`, `TOKEN_KEK_BASE64` (32-byte
       key from a secret manager), `APPLE_AUDIENCE`, `GMAIL_WEBHOOK_SECRET`,
