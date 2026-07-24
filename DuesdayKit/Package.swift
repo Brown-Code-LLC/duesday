@@ -111,7 +111,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureSubscriptions",
-            dependencies: ["CoreModels", "Persistence", "DesignSystem"],
+            dependencies: ["CoreModels", "Persistence", "DesignSystem", "CalendarIntegration"],
             swiftSettings: mainActorDefault
         ),
         .target(
@@ -129,7 +129,8 @@ let package = Package(
             dependencies: [
                 "CoreModels", "Persistence", "DesignSystem", "Notifications",
                 "AppSecurity", "Networking", "Authentication", "EmailProviders",
-                "GmailProvider", "SubscriptionDetection", "ReceiptImport",
+                "GmailProvider", "MicrosoftProvider", "SubscriptionDetection",
+                "ReceiptImport",
             ],
             swiftSettings: mainActorDefault
         ),

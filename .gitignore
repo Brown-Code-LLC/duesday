@@ -10,6 +10,8 @@ xcuserdata/
 .build/
 .swiftpm/
 Package.resolved
+node_modules/
+backend/dist/
 
 # Derived data / archives
 DerivedData/
