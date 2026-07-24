@@ -12,7 +12,7 @@
 	     Google iOS OAuth client ID and the Microsoft Entra application ID.
 	     Empty values leave email connection in its configuration-needed state.] -->
 	<key>DuesdayGoogleOAuthClientID</key>
-	<string></string>
+	<string>104481176820-tc4qoo1emo9v45rnfsa5qt68etj1nnlp.apps.googleusercontent.com</string>
 	<key>DuesdayMicrosoftOAuthClientID</key>
 	<string></string>
 </dict>
