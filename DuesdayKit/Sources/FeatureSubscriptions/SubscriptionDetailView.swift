@@ -1,3 +1,4 @@
+import CalendarIntegration
 import CoreModels
 import DesignSystem
 import Persistence
@@ -14,6 +15,7 @@ public struct SubscriptionDetailView: View {
     @State private var isConfirmingDelete = false
     @State private var pendingLink: URL?
     @State private var actionError: String?
+    @State private var calendarExportMessage: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.subscriptionRepository) private var injectedRepository
@@ -204,9 +206,35 @@ public struct SubscriptionDetailView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Configure reminders for this entry")
+            if subscription.nextBillingDate != nil {
+                Button {
+                    exportToCalendar()
+                } label: {
+                    DSLedgerRow("Calendar") {
+                        Text("\(calendarExportMessage ?? "Add renewal to Calendar") ›")
+                            .foregroundStyle(Color.dsAccentDeep)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Adds the next renewal as an all-day calendar event")
+            }
             Rectangle().fill(Color.dsDivider).frame(height: 1)
         }
         .font(.dsBody(13.5))
+    }
+
+    /// Optional EventKit export (write-only access): one all-day event for
+    /// the next renewal.
+    private func exportToCalendar() {
+        Task {
+            do {
+                _ = try await CalendarExportService().export(subscription)
+                calendarExportMessage = "Added to Calendar"
+                Haptics.success()
+            } catch {
+                actionError = "Couldn't add to Calendar. Check calendar access in Settings."
+            }
+        }
     }
 
     private var sinceText: String? {
