@@ -16,13 +16,31 @@ public struct SubscriptionFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.subscriptionRepository) private var injectedRepository
     @FocusState private var focusedField: Field?
+    private let onSaved: () -> Void
 
     private enum Field {
         case merchant, amount, regularPrice, plan, payment, website, cancellation, instructions, notes
     }
 
-    public init(mode: SubscriptionFormModel.Mode = .create) {
+    public init(
+        mode: SubscriptionFormModel.Mode = .create,
+        onSaved: @escaping () -> Void = {}
+    ) {
         _model = State(initialValue: SubscriptionFormModel(mode: mode))
+        self.onSaved = onSaved
+    }
+
+    /// Seeds the form with detected values (review workflow's
+    /// edit-before-confirm path).
+    public init(
+        mode: SubscriptionFormModel.Mode = .create,
+        prefill: SubscriptionFormModel.Prefill,
+        onSaved: @escaping () -> Void = {}
+    ) {
+        let model = SubscriptionFormModel(mode: mode)
+        model.apply(prefill)
+        _model = State(initialValue: model)
+        self.onSaved = onSaved
     }
 
     public var body: some View {
@@ -446,6 +464,7 @@ public struct SubscriptionFormView: View {
         do {
             try model.save(using: repository)
             Haptics.success()
+            onSaved()
             dismiss()
         } catch {
             saveError = error.localizedDescription

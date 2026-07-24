@@ -13,6 +13,70 @@ public final class SubscriptionFormModel {
         case edit(Subscription)
     }
 
+    /// Detected values used to seed the form when confirming a detection with
+    /// edits (review workflow). Missing fields stay at their form defaults.
+    public struct Prefill: Sendable {
+        public var merchantName: String?
+        public var amount: Decimal?
+        public var currencyCode: String?
+        public var frequency: BillingFrequency?
+        public var customInterval: CustomInterval?
+        public var nextBillingDate: Date?
+        public var trialEndDate: Date?
+        public var detectionSource: DetectionSource
+        public var confidence: Double?
+
+        public init(
+            merchantName: String? = nil,
+            amount: Decimal? = nil,
+            currencyCode: String? = nil,
+            frequency: BillingFrequency? = nil,
+            customInterval: CustomInterval? = nil,
+            nextBillingDate: Date? = nil,
+            trialEndDate: Date? = nil,
+            detectionSource: DetectionSource = .manual,
+            confidence: Double? = nil
+        ) {
+            self.merchantName = merchantName
+            self.amount = amount
+            self.currencyCode = currencyCode
+            self.frequency = frequency
+            self.customInterval = customInterval
+            self.nextBillingDate = nextBillingDate
+            self.trialEndDate = trialEndDate
+            self.detectionSource = detectionSource
+            self.confidence = confidence
+        }
+    }
+
+    /// Applied on save for prefilled (detection-confirmed) entries.
+    private var detectionSource: DetectionSource = .manual
+    private var detectionConfidence: Double?
+
+    public func apply(_ prefill: Prefill) {
+        if let merchant = prefill.merchantName { merchantName = merchant }
+        if let value = prefill.amount { amount = value }
+        if let code = prefill.currencyCode { currencyCode = code }
+        if let freq = prefill.frequency {
+            frequency = freq
+            if freq == .custom, let interval = prefill.customInterval {
+                customCount = interval.count
+                customUnit = interval.unit
+            }
+        }
+        if let next = prefill.nextBillingDate {
+            hasNextBillingDate = true
+            nextBillingDate = next
+        }
+        if let trialEnd = prefill.trialEndDate {
+            hasTrialEnd = true
+            trialEndDate = trialEnd
+            status = .trial
+        }
+        detectionSource = prefill.detectionSource
+        detectionConfidence = prefill.confidence
+    }
+
     public enum ValidationError: LocalizedError, Equatable {
         case missingMerchant
         case missingAmount
@@ -226,7 +290,8 @@ public final class SubscriptionFormModel {
                 cancellationURL: parseHTTPURL(cancellationURLText),
                 cancellationInstructions: nonEmpty(cancellationInstructions),
                 notes: nonEmpty(notes),
-                detectionSource: .manual
+                detectionSource: detectionSource,
+                confidence: detectionConfidence
             )
             subscription.reminderRules = defaultReminderRules()
             try repository.insert(subscription)
