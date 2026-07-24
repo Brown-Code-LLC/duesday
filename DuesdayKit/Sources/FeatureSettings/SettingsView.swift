@@ -22,6 +22,11 @@ public struct SettingsView: View {
     @State private var isConfirmingErase = false
     @State private var actionError: String?
     @Environment(\.modelContext) private var modelContext
+    @Query private var accounts: [UserAccount]
+
+    private var accountCountText: String? {
+        accounts.isEmpty ? nil : "\(accounts.count)"
+    }
 
     public init(
         storageWarning: String? = nil,
@@ -51,10 +56,18 @@ public struct SettingsView: View {
                     }
 
                     DSSectionHeader("Accounts & detection")
-                    infoRow(
-                        title: "Connected email accounts",
-                        subtitle: "Coming soon — read-only Gmail and Outlook detection, reviewed by you before anything joins the ledger."
-                    )
+                    NavigationLink {
+                        ConnectedAccountsView()
+                    } label: {
+                        chevronRow("Connected email accounts", detail: accountCountText)
+                    }
+                    .buttonStyle(.plain)
+                    NavigationLink {
+                        ImportReceiptsView()
+                    } label: {
+                        chevronRow("Import receipt or email")
+                    }
+                    .buttonStyle(.plain)
 
                     DSSectionHeader("Preferences")
                         .padding(.top, DS.Spacing.lg)

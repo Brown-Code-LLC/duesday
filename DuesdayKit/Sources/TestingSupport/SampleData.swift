@@ -232,6 +232,96 @@ public enum SampleData {
         ]
     }
 
+    /// Pending review-queue detections demonstrating the review flow:
+    /// a high-confidence receipt, a trial with a likely-duplicate link target,
+    /// and a low-confidence partial.
+    public static func detectionCandidates(
+        now: Date = referenceDate,
+        duplicateOf existing: Subscription? = nil
+    ) -> [DetectionCandidate] {
+        let calendar = Calendar.current
+        func days(_ n: Int) -> Date {
+            calendar.date(byAdding: .day, value: n, to: now) ?? now
+        }
+
+        let notion = DetectionCandidate(
+            sourceMessageID: "sample-msg-notion",
+            merchantName: "Notion",
+            amount: Decimal(string: "10.00"),
+            currencyCode: "USD",
+            billingFrequency: .monthly,
+            detectedDate: days(-1),
+            nextBillingDate: days(27),
+            evidence: [
+                DetectionEvidence(
+                    field: .merchant,
+                    reason: .trustedSenderDomain,
+                    snippet: "Notion <team@mail.notion.so>",
+                    weight: 0.2
+                ),
+                DetectionEvidence(
+                    field: .amount,
+                    reason: .labeledAmount,
+                    snippet: "Total: $10.00",
+                    weight: 0.2
+                ),
+                DetectionEvidence(
+                    field: .frequency,
+                    reason: .explicitInterval,
+                    snippet: "billed monthly",
+                    weight: 0.2
+                ),
+            ],
+            confidenceScore: 0.9,
+            fieldConfidence: ["merchant": 0.95, "amount": 0.9, "frequency": 0.9]
+        )
+
+        let hulu = DetectionCandidate(
+            sourceMessageID: "sample-msg-hulu",
+            merchantName: "Hulu",
+            amount: Decimal(string: "17.99"),
+            currencyCode: "USD",
+            billingFrequency: .monthly,
+            detectedDate: days(-2),
+            trialEndDate: days(12),
+            evidence: [
+                DetectionEvidence(
+                    field: .trialEnd,
+                    reason: .explicitRenewalDate,
+                    snippet: "Your free trial ends on \(days(12).formatted(.dateTime.month(.wide).day().year()))",
+                    weight: 0.1
+                ),
+                DetectionEvidence(
+                    field: .amount,
+                    reason: .labeledAmount,
+                    snippet: "then $17.99/month",
+                    weight: 0.2
+                ),
+            ],
+            confidenceScore: 0.72,
+            fieldConfidence: ["trialEnd": 0.85, "amount": 0.9],
+            possibleDuplicateSubscriptionID: existing?.id
+        )
+
+        let partial = DetectionCandidate(
+            sourceMessageID: "sample-msg-partial",
+            merchantName: "Ridgeline Club",
+            detectedDate: days(-4),
+            evidence: [
+                DetectionEvidence(
+                    field: .frequency,
+                    reason: .recurringPhrase,
+                    snippet: "your membership will renew",
+                    weight: 0.15
+                ),
+            ],
+            confidenceScore: 0.35,
+            fieldConfidence: [:]
+        )
+
+        return [notion, hulu, partial]
+    }
+
     /// Inserts the sample set into an (in-memory) context. Idempotent per
     /// context: skips when subscriptions already exist.
     public static func seed(into context: ModelContext) throws {
@@ -239,8 +329,12 @@ public enum SampleData {
         descriptor.fetchLimit = 1
         guard try context.fetch(descriptor).isEmpty else { return }
 
-        for subscription in subscriptions() {
+        let all = subscriptions()
+        for subscription in all {
             context.insert(subscription)
+        }
+        for candidate in detectionCandidates(duplicateOf: all.first) {
+            context.insert(candidate)
         }
         try context.save()
     }

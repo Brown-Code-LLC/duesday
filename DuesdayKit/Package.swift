@@ -19,6 +19,15 @@ let package = Package(
                 "Persistence",
                 "Notifications",
                 "AppSecurity",
+                "Networking",
+                "Authentication",
+                "EmailProviders",
+                "GmailProvider",
+                "SubscriptionDetection",
+                "ReceiptImport",
+                "CalendarIntegration",
+                "MicrosoftProvider",
+                "Analytics",
                 "TestingSupport",
                 "FeatureOnboarding",
                 "FeatureOverview",
@@ -26,6 +35,7 @@ let package = Package(
                 "FeatureCalendar",
                 "FeatureInsights",
                 "FeatureSettings",
+                "FeatureDetectionReview",
             ]
         )
     ],
@@ -51,6 +61,39 @@ let package = Package(
             name: "AppSecurity",
             swiftSettings: mainActorDefault
         ),
+        // Sync/parsing infrastructure stays nonisolated so it can run off the
+        // main actor (ADR-4).
+        .target(name: "Networking", dependencies: ["CoreModels"]),
+        .target(name: "Authentication", dependencies: ["Networking", "CoreModels"]),
+        .target(name: "EmailProviders", dependencies: ["CoreModels"]),
+        .target(
+            name: "GmailProvider",
+            dependencies: ["EmailProviders", "Networking", "Authentication", "CoreModels"]
+        ),
+        .target(name: "SubscriptionDetection", dependencies: ["CoreModels"]),
+        .target(
+            name: "ReceiptImport",
+            dependencies: ["CoreModels", "SubscriptionDetection"],
+            swiftSettings: mainActorDefault
+        ),
+        .target(
+            name: "CalendarIntegration",
+            dependencies: ["CoreModels"],
+            swiftSettings: mainActorDefault
+        ),
+        .target(
+            name: "MicrosoftProvider",
+            dependencies: ["EmailProviders", "Networking", "CoreModels"]
+        ),
+        .target(name: "Analytics"),
+        .target(
+            name: "FeatureDetectionReview",
+            dependencies: [
+                "CoreModels", "Persistence", "DesignSystem",
+                "SubscriptionDetection", "FeatureSubscriptions",
+            ],
+            swiftSettings: mainActorDefault
+        ),
         .target(
             name: "TestingSupport",
             dependencies: ["CoreModels", "Persistence"],
@@ -63,7 +106,7 @@ let package = Package(
         ),
         .target(
             name: "FeatureOverview",
-            dependencies: ["CoreModels", "Persistence", "DesignSystem"],
+            dependencies: ["CoreModels", "Persistence", "DesignSystem", "FeatureDetectionReview"],
             swiftSettings: mainActorDefault
         ),
         .target(
@@ -83,7 +126,11 @@ let package = Package(
         ),
         .target(
             name: "FeatureSettings",
-            dependencies: ["CoreModels", "Persistence", "DesignSystem", "Notifications", "AppSecurity"],
+            dependencies: [
+                "CoreModels", "Persistence", "DesignSystem", "Notifications",
+                "AppSecurity", "Networking", "Authentication", "EmailProviders",
+                "GmailProvider", "SubscriptionDetection", "ReceiptImport",
+            ],
             swiftSettings: mainActorDefault
         ),
         .testTarget(
@@ -104,6 +151,28 @@ let package = Package(
             name: "NotificationsTests",
             dependencies: ["Notifications", "CoreModels"],
             swiftSettings: mainActorDefault
+        ),
+        .testTarget(name: "NetworkingTests", dependencies: ["Networking"]),
+        .testTarget(name: "AuthenticationTests", dependencies: ["Authentication", "Networking"]),
+        .testTarget(name: "GmailProviderTests", dependencies: ["GmailProvider", "EmailProviders"]),
+        .testTarget(
+            name: "ReceiptImportTests",
+            dependencies: ["ReceiptImport", "SubscriptionDetection", "CoreModels"],
+            swiftSettings: mainActorDefault
+        ),
+        .testTarget(
+            name: "MicrosoftProviderTests",
+            dependencies: ["MicrosoftProvider", "EmailProviders", "Networking"]
+        ),
+        .testTarget(
+            name: "FeatureDetectionReviewTests",
+            dependencies: ["FeatureDetectionReview", "Persistence", "CoreModels"],
+            swiftSettings: mainActorDefault
+        ),
+        .testTarget(
+            name: "SubscriptionDetectionTests",
+            dependencies: ["SubscriptionDetection", "CoreModels"],
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

@@ -1,5 +1,6 @@
 import CoreModels
 import DesignSystem
+import FeatureDetectionReview
 import Persistence
 import SwiftData
 import SwiftUI
@@ -10,6 +11,9 @@ import SwiftUI
 public struct OverviewView: View {
     @Query(filter: #Predicate<Subscription> { $0.archivedAt == nil })
     private var subscriptions: [Subscription]
+
+    @Query(filter: #Predicate<DetectionCandidate> { $0.reviewStatusRaw == "pending" })
+    private var pendingCandidates: [DetectionCandidate]
 
     private let onAddSubscription: () -> Void
     private let onOpenSettings: () -> Void
@@ -81,6 +85,9 @@ public struct OverviewView: View {
                     .frame(height: 1)
                     .padding(.top, DS.Spacing.lg)
 
+                if !pendingCandidates.isEmpty {
+                    reviewInboxRow
+                }
                 nextUpSection
                 if !attentionItems.isEmpty {
                     attentionSection
@@ -133,6 +140,40 @@ public struct OverviewView: View {
                     .foregroundStyle(Color.dsInkSecondary)
             }
         }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Entry to the review inbox (design turn 03) — shown only when
+    /// detections are waiting.
+    private var reviewInboxRow: some View {
+        NavigationLink {
+            ReviewQueueView()
+        } label: {
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.dsAccent)
+                        .frame(width: 3, height: 34)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Found in your email")
+                            .font(.dsBodyStrong(14.5))
+                        Text("\(pendingCandidates.count) detection\(pendingCandidates.count == 1 ? "" : "s") waiting for review")
+                            .font(.dsBody(12))
+                            .foregroundStyle(Color.dsInkSecondary)
+                    }
+                    Spacer()
+                    Text("Review ›")
+                        .font(.dsBody(13))
+                        .foregroundStyle(Color.dsAccentDeep)
+                }
+                .padding(.vertical, 11)
+                Rectangle().fill(Color.dsDivider).frame(height: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, DS.Spacing.md)
         .accessibilityElement(children: .combine)
     }
 
