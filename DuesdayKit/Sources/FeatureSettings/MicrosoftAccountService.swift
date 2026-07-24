@@ -2,27 +2,26 @@ import Authentication
 import CoreModels
 import EmailProviders
 import Foundation
-import GmailProvider
+import MicrosoftProvider
 import Networking
 import SubscriptionDetection
 import SwiftData
 import os
 
-/// Orchestrates the Gmail account lifecycle: connect (OAuth → profile →
-/// account record + Keychain token), sync (incremental with search fallback →
-/// detection pipeline → review queue), and disconnect (revoke + wipe).
+/// Microsoft (Outlook) account lifecycle, mirroring the Gmail service over
+/// the Graph provider: connect via PKCE (public client, no MSAL dependency),
+/// delta-query incremental sync with search fallback, disconnect with local
+/// wipe (Microsoft identity has no revocation endpoint; access is removed
+/// from the user's Microsoft account portal).
 @MainActor
-public final class GmailAccountService {
+public final class MicrosoftAccountService {
     public enum ServiceError: LocalizedError {
         case notConfigured
-        case accountMissing
 
         public var errorDescription: String? {
             switch self {
             case .notConfigured:
-                "Gmail isn't configured in this build yet. A Google OAuth client ID must be added before accounts can be connected."
-            case .accountMissing:
-                "This account is no longer available."
+                "Outlook isn't configured in this build yet. A Microsoft Entra client ID must be added before accounts can be connected."
             }
         }
     }
@@ -31,16 +30,14 @@ public final class GmailAccountService {
     private let tokenStore: any TokenStore
     private let httpClient: any HTTPClient
     private let configuration: OAuthConfiguration?
-    private static let logger = DuesdayLog.logger(category: "gmail-sync")
-
-    /// How many messages are fetched and analyzed per manual sync pass.
+    private static let logger = DuesdayLog.logger(category: "microsoft-sync")
     private let batchLimit = 25
 
     public init(
         context: ModelContext,
         tokenStore: any TokenStore = KeychainTokenStore(),
         httpClient: any HTTPClient = URLSessionHTTPClient(),
-        configuration: OAuthConfiguration? = OAuthConfiguration.googleFromMainBundle()
+        configuration: OAuthConfiguration? = OAuthConfiguration.microsoftFromMainBundle()
     ) {
         self.context = context
         self.tokenStore = tokenStore
@@ -49,8 +46,6 @@ public final class GmailAccountService {
     }
 
     public var isConfigured: Bool { configuration != nil }
-
-    // MARK: - Connect
 
     @discardableResult
     public func connect() async throws -> UserAccount {
@@ -63,7 +58,7 @@ public final class GmailAccountService {
         let token = try await oauth.signIn()
 
         let account = UserAccount(
-            provider: .gmail,
+            provider: .microsoft,
             emailAddress: "",
             connectionStatus: .connected,
             grantedScopes: token.scopes
@@ -73,16 +68,13 @@ public final class GmailAccountService {
         let provider = makeProvider(accountID: account.id)
         let profile = try await provider.accountProfile()
         account.emailAddress = profile.emailAddress
+        account.displayName = profile.displayName
         account.updatedAt = .now
         context.insert(account)
         try context.save()
         return account
     }
 
-    // MARK: - Sync
-
-    /// One manual/foreground sync pass. Incremental when a cursor exists,
-    /// falling back to the targeted backfill search.
     @discardableResult
     public func sync(account: UserAccount) async throws -> Int {
         let provider = makeProvider(accountID: account.id)
@@ -97,7 +89,7 @@ public final class GmailAccountService {
             case .cursorExpired:
                 let page = try await provider.searchMessages(ProviderQuery(maxResults: batchLimit))
                 refs = page.refs
-                newCursor = try await provider.currentHistoryID()
+                newCursor = try await provider.initialDeltaCursor()
             }
         } catch EmailProviderError.authorizationExpired {
             account.connectionStatus = .expired
@@ -118,7 +110,6 @@ public final class GmailAccountService {
                 plainText: content.plainText,
                 html: content.html
             )
-            // Pure, synchronous analysis; content is discarded right after.
             let outcome = DetectionPipeline.analyze(input)
             if case .created = try ingestor.ingest(outcome, sourceAccountID: account.id) {
                 created += 1
@@ -134,46 +125,25 @@ public final class GmailAccountService {
         return created
     }
 
-    // MARK: - Disconnect & data deletion
-
-    /// Revokes access, deletes the Keychain token, removes the account, and
-    /// optionally purges everything imported from it (privacy model).
     public func disconnect(account: UserAccount, purgeImportedData: Bool) async throws {
-        if let configuration, let token = try? tokenStore.load(accountID: account.id) {
-            let oauth = OAuthService(
-                configuration: configuration,
-                httpClient: httpClient,
-                authorizationUI: WebAuthenticationUI()
-            )
-            await oauth.revoke(token: token)
-        }
         try? tokenStore.delete(accountID: account.id)
-
         if purgeImportedData {
-            try purgeCandidates(accountID: account.id)
+            let accountID = account.id
+            let descriptor = FetchDescriptor<DetectionCandidate>(
+                predicate: #Predicate { $0.sourceAccountID == accountID }
+            )
+            for candidate in try context.fetch(descriptor) {
+                context.delete(candidate)
+            }
         }
         context.delete(account)
         try context.save()
     }
 
-    /// Deletes all detections imported from this account, including resolved
-    /// ones (delete-imported-data flow).
-    public func purgeCandidates(accountID: UUID) throws {
-        let descriptor = FetchDescriptor<DetectionCandidate>(
-            predicate: #Predicate { $0.sourceAccountID == accountID }
-        )
-        for candidate in try context.fetch(descriptor) {
-            context.delete(candidate)
-        }
-        try context.save()
-    }
-
-    // MARK: - Provider assembly
-
-    private func makeProvider(accountID: UUID) -> GmailProvider {
-        GmailProvider(
+    private func makeProvider(accountID: UUID) -> MicrosoftProvider {
+        MicrosoftProvider(
             httpClient: httpClient,
-            tokens: TokenRefresher(
+            tokens: MicrosoftTokenRefresher(
                 accountID: accountID,
                 tokenStore: tokenStore,
                 configuration: configuration,
@@ -183,14 +153,11 @@ public final class GmailAccountService {
     }
 }
 
-/// Bridges the provider's token needs to the Keychain store, refreshing
-/// through OAuth when the access token is stale or rejected.
-private final class TokenRefresher: AccessTokenProviding, @unchecked Sendable {
+private final class MicrosoftTokenRefresher: MicrosoftAccessTokenProviding, @unchecked Sendable {
     private let accountID: UUID
     private let tokenStore: any TokenStore
     private let configuration: OAuthConfiguration?
     private let httpClient: any HTTPClient
-    private let lock = NSLock()
 
     init(
         accountID: UUID,

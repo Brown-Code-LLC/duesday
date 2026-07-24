@@ -127,8 +127,8 @@ struct TokenStoreTests {
 
 @Suite("OAuth service")
 struct OAuthServiceTests {
-    private var configuration: GoogleOAuthConfiguration {
-        GoogleOAuthConfiguration(clientID: "12345-abc.apps.googleusercontent.com")
+    private var configuration: OAuthConfiguration {
+        OAuthConfiguration.google(clientID: "12345-abc.apps.googleusercontent.com")
     }
 
     @Test("Redirect scheme is the reversed client ID")

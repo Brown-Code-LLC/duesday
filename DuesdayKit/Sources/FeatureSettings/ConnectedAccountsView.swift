@@ -93,6 +93,7 @@ public struct ConnectedAccountsView: View {
                         .font(.dsBodyStrong(14.5))
                         .lineLimit(1)
                     HStack(spacing: 6) {
+                        DSTagPill(account.provider.displayName, style: .neutral)
                         statusPill(account)
                         Text(lastSyncText(account))
                             .font(.dsBody(12))
@@ -146,24 +147,39 @@ public struct ConnectedAccountsView: View {
 
     private var connectSection: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.sm) {
-            if service.isConfigured {
+            if gmailService.isConfigured {
                 Button {
-                    connect()
+                    connect(.gmail)
                 } label: {
                     if isConnecting {
                         ProgressView().tint(Color.dsAccentDeep)
                     } else {
-                        Text(accounts.isEmpty ? "Connect Gmail" : "Connect another account")
+                        Text("Connect Gmail")
                     }
                 }
                 .buttonStyle(.dsPrimary)
                 .disabled(isConnecting)
-                Text("You'll sign in with Google. Duesday never sees your password, and requests read-only access.")
+            }
+            if microsoftService.isConfigured {
+                Button {
+                    connect(.microsoft)
+                } label: {
+                    if isConnecting {
+                        ProgressView().tint(Color.dsAccentDeep)
+                    } else {
+                        Text("Connect Outlook")
+                    }
+                }
+                .buttonStyle(.dsPrimary)
+                .disabled(isConnecting)
+            }
+            if gmailService.isConfigured || microsoftService.isConfigured {
+                Text("You'll sign in with the provider directly. Duesday never sees your password, and requests read-only access.")
                     .font(.dsBody(11.5))
                     .foregroundStyle(Color.dsInkTertiary)
             } else {
                 // Honest configuration-needed state: no dead primary button.
-                Text("Gmail connection requires this build to be configured with a Google OAuth client ID (see docs/05-integration-strategy.md). Outlook support follows in a later update.")
+                Text("Email connection requires this build to be configured with provider OAuth client IDs (see docs/05-integration-strategy.md).")
                     .font(.dsBody(12.5))
                     .lineSpacing(3)
                     .foregroundStyle(Color.dsInkSecondary)
@@ -173,15 +189,22 @@ public struct ConnectedAccountsView: View {
 
     // MARK: - Actions
 
-    private var service: GmailAccountService {
+    private var gmailService: GmailAccountService {
         GmailAccountService(context: modelContext)
     }
 
-    private func connect() {
+    private var microsoftService: MicrosoftAccountService {
+        MicrosoftAccountService(context: modelContext)
+    }
+
+    private func connect(_ provider: EmailProviderKind) {
         isConnecting = true
         Task {
             do {
-                _ = try await service.connect()
+                switch provider {
+                case .gmail: _ = try await gmailService.connect()
+                case .microsoft: _ = try await microsoftService.connect()
+                }
                 Haptics.success()
             } catch {
                 actionError = error.localizedDescription
@@ -194,7 +217,10 @@ public struct ConnectedAccountsView: View {
         isSyncing = account.id
         Task {
             do {
-                _ = try await service.sync(account: account)
+                switch account.provider {
+                case .gmail: _ = try await gmailService.sync(account: account)
+                case .microsoft: _ = try await microsoftService.sync(account: account)
+                }
                 Haptics.success()
             } catch {
                 actionError = error.localizedDescription
@@ -208,7 +234,12 @@ public struct ConnectedAccountsView: View {
         disconnectTarget = nil
         Task {
             do {
-                try await service.disconnect(account: account, purgeImportedData: purge)
+                switch account.provider {
+                case .gmail:
+                    try await gmailService.disconnect(account: account, purgeImportedData: purge)
+                case .microsoft:
+                    try await microsoftService.disconnect(account: account, purgeImportedData: purge)
+                }
                 Haptics.success()
             } catch {
                 actionError = error.localizedDescription

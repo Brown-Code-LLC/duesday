@@ -7,46 +7,107 @@ import AuthenticationServices
 import UIKit
 #endif
 
-/// Google OAuth configuration for the installed-app (PKCE, no-secret) flow.
-/// The client ID is developer-supplied — see docs/05-integration-strategy.md.
-public struct GoogleOAuthConfiguration: Sendable {
+/// Provider-agnostic OAuth configuration for the installed-app (PKCE,
+/// no-secret) flow. Client IDs are developer-supplied — see
+/// docs/05-integration-strategy.md.
+public struct OAuthConfiguration: Sendable {
     public let clientID: String
     public let scopes: [String]
     public let authorizationEndpoint: URL
     public let tokenEndpoint: URL
-    public let revocationEndpoint: URL
+    /// Some providers (Microsoft identity) have no revocation endpoint;
+    /// local token deletion still happens on disconnect.
+    public let revocationEndpoint: URL?
+    public let redirectScheme: String
+    public let redirectURI: String
+    /// Provider-specific authorization parameters (e.g. Google's
+    /// `access_type=offline`).
+    public let extraAuthorizationParameters: [String: String]
 
     public init(
         clientID: String,
-        scopes: [String] = ["https://www.googleapis.com/auth/gmail.readonly"],
-        authorizationEndpoint: URL = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!,
-        tokenEndpoint: URL = URL(string: "https://oauth2.googleapis.com/token")!,
-        revocationEndpoint: URL = URL(string: "https://oauth2.googleapis.com/revoke")!
+        scopes: [String],
+        authorizationEndpoint: URL,
+        tokenEndpoint: URL,
+        revocationEndpoint: URL?,
+        redirectScheme: String,
+        redirectURI: String,
+        extraAuthorizationParameters: [String: String] = [:]
     ) {
         self.clientID = clientID
         self.scopes = scopes
         self.authorizationEndpoint = authorizationEndpoint
         self.tokenEndpoint = tokenEndpoint
         self.revocationEndpoint = revocationEndpoint
+        self.redirectScheme = redirectScheme
+        self.redirectURI = redirectURI
+        self.extraAuthorizationParameters = extraAuthorizationParameters
     }
 
-    /// iOS Google clients use the reversed client ID as the redirect scheme.
-    public var redirectScheme: String {
-        clientID.split(separator: ".").reversed().joined(separator: ".")
+    /// Google installed-app client. iOS Google clients use the reversed
+    /// client ID as the redirect scheme; offline access is requested
+    /// explicitly so a refresh token is issued.
+    public static func google(clientID: String) -> OAuthConfiguration {
+        let scheme = clientID.split(separator: ".").reversed().joined(separator: ".")
+        return OAuthConfiguration(
+            clientID: clientID,
+            scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+            authorizationEndpoint: URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!,
+            tokenEndpoint: URL(string: "https://oauth2.googleapis.com/token")!,
+            revocationEndpoint: URL(string: "https://oauth2.googleapis.com/revoke")!,
+            redirectScheme: scheme,
+            redirectURI: "\(scheme):/oauth2redirect",
+            extraAuthorizationParameters: ["access_type": "offline", "prompt": "consent"]
+        )
     }
 
-    public var redirectURI: String { "\(redirectScheme):/oauth2redirect" }
+    /// Microsoft identity platform public client (PKCE — no secret, no MSAL
+    /// dependency; ADR-6 amendment). Refresh tokens come from the
+    /// `offline_access` scope. The redirect URI must be registered on the
+    /// Entra app as a mobile/desktop platform redirect.
+    public static func microsoft(clientID: String) -> OAuthConfiguration {
+        OAuthConfiguration(
+            clientID: clientID,
+            scopes: [
+                "https://graph.microsoft.com/Mail.Read",
+                "offline_access", "openid", "email",
+            ],
+            authorizationEndpoint: URL(string: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize")!,
+            tokenEndpoint: URL(string: "https://login.microsoftonline.com/common/oauth2/v2.0/token")!,
+            revocationEndpoint: nil,
+            redirectScheme: "duesday.oauth",
+            redirectURI: "duesday.oauth://microsoft"
+        )
+    }
 
-    /// Reads the client ID from Info.plist. [PLACEHOLDER: developer credential —
-    /// set `DuesdayGoogleOAuthClientID` in the app target's build settings /
-    /// Info.plist to the iOS OAuth client ID from Google Cloud Console.]
-    public static func fromMainBundle() -> GoogleOAuthConfiguration? {
-        guard let clientID = Bundle.main.object(forInfoDictionaryKey: "DuesdayGoogleOAuthClientID") as? String,
-              !clientID.isEmpty, clientID != "YOUR_CLIENT_ID.apps.googleusercontent.com"
+    /// Reads the Google client ID from Info.plist. [PLACEHOLDER: developer
+    /// credential — set `DuesdayGoogleOAuthClientID` to the iOS OAuth client
+    /// ID from Google Cloud Console.]
+    public static func googleFromMainBundle() -> OAuthConfiguration? {
+        guard let clientID = mainBundleValue("DuesdayGoogleOAuthClientID"),
+              clientID != "YOUR_CLIENT_ID.apps.googleusercontent.com"
         else { return nil }
-        return GoogleOAuthConfiguration(clientID: clientID)
+        return .google(clientID: clientID)
+    }
+
+    /// Reads the Microsoft client ID from Info.plist. [PLACEHOLDER: developer
+    /// credential — set `DuesdayMicrosoftOAuthClientID` to the Entra app
+    /// registration's application (client) ID.]
+    public static func microsoftFromMainBundle() -> OAuthConfiguration? {
+        guard let clientID = mainBundleValue("DuesdayMicrosoftOAuthClientID") else { return nil }
+        return .microsoft(clientID: clientID)
+    }
+
+    private static func mainBundleValue(_ key: String) -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              !value.isEmpty
+        else { return nil }
+        return value
     }
 }
+
+/// Backwards-compatible name used by earlier call sites.
+public typealias GoogleOAuthConfiguration = OAuthConfiguration
 
 public enum OAuthError: Error, Equatable {
     case notConfigured
@@ -65,13 +126,13 @@ public protocol AuthorizationUI: Sendable {
 
 /// Runs the full authorization-code + PKCE flow and token lifecycle.
 public final class OAuthService: Sendable {
-    private let configuration: GoogleOAuthConfiguration
+    private let configuration: OAuthConfiguration
     private let httpClient: any HTTPClient
     private let authorizationUI: any AuthorizationUI
     private static let logger = DuesdayLog.logger(category: "auth")
 
     public init(
-        configuration: GoogleOAuthConfiguration,
+        configuration: OAuthConfiguration,
         httpClient: any HTTPClient,
         authorizationUI: any AuthorizationUI
     ) {
@@ -84,7 +145,7 @@ public final class OAuthService: Sendable {
 
     public func authorizationURL(pkce: PKCE, state: String) -> URL {
         var components = URLComponents(url: configuration.authorizationEndpoint, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
+        var items = [
             URLQueryItem(name: "client_id", value: configuration.clientID),
             URLQueryItem(name: "redirect_uri", value: configuration.redirectURI),
             URLQueryItem(name: "response_type", value: "code"),
@@ -92,9 +153,11 @@ public final class OAuthService: Sendable {
             URLQueryItem(name: "code_challenge", value: pkce.codeChallenge),
             URLQueryItem(name: "code_challenge_method", value: pkce.challengeMethod),
             URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "access_type", value: "offline"),
-            URLQueryItem(name: "prompt", value: "consent"),
         ]
+        for (name, value) in configuration.extraAuthorizationParameters.sorted(by: { $0.key < $1.key }) {
+            items.append(URLQueryItem(name: name, value: value))
+        }
+        components.queryItems = items
         return components.url!
     }
 
@@ -140,9 +203,12 @@ public final class OAuthService: Sendable {
     }
 
     /// Best-effort server-side revocation; local deletion happens regardless.
+    /// Providers without a revocation endpoint (Microsoft identity) rely on
+    /// the account portal, so this becomes a no-op there.
     public func revoke(token: OAuthToken) async {
+        guard let endpoint = configuration.revocationEndpoint else { return }
         let credential = token.refreshToken ?? token.accessToken
-        let request = HTTPRequest.form(url: configuration.revocationEndpoint, fields: ["token": credential])
+        let request = HTTPRequest.form(url: endpoint, fields: ["token": credential])
         _ = try? await httpClient.send(request)
     }
 
