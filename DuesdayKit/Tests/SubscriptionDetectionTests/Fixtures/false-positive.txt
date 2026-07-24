@@ -1,0 +1,5 @@
+Your order has shipped!
+
+Great news - order #99182 from Gadget Grove is on its way.
+Track your package: gadgetgrove.example/track/99182
+Limited time deal: 20% off accessories this week only.

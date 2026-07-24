@@ -1,0 +1,5 @@
+Action needed: payment failed
+
+We couldn't process your payment of $9.99 for your Notely subscription.
+Please update your payment method to keep your plan active.
+We will retry the charge in 3 days.

@@ -1,0 +1,4 @@
+Your refund has been processed
+
+We've issued a refund of $24.00 to your card for your Cloudledger charge.
+Refunds usually appear within 5-10 business days.

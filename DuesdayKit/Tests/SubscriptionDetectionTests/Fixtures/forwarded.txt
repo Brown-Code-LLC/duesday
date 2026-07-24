@@ -1,0 +1,9 @@
+FYI - see below
+
+---------- Forwarded message ----------
+From: Notely Billing <billing@notely.example>
+Subject: Your Notely receipt
+
+Amount charged: $9.99
+Your subscription renews monthly.
+Next billing date: August 11, 2026

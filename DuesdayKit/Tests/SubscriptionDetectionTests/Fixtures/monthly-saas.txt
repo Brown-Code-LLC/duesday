@@ -1,0 +1,10 @@
+Thanks for your Cloudledger subscription!
+
+Receipt #48213
+Plan: Team Workspace
+Amount charged: $24.00
+Billing period: billed monthly
+Next billing date: August 15, 2026
+Payment method: card ending 4821
+
+Manage your subscription at cloudledger.example/account
