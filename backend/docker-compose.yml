@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://duesday:duesday@postgres:5432/duesday
+      REDIS_URL: redis://redis:6379
+      TOKEN_KEK_BASE64: ${TOKEN_KEK_BASE64}
+      APPLE_AUDIENCE: ${APPLE_AUDIENCE}
+    ports: ["3000:3000"]
+    depends_on: [postgres, redis]
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: duesday
+      POSTGRES_PASSWORD: duesday
+      POSTGRES_DB: duesday
+    volumes: [pgdata:/var/lib/postgresql/data]
+  redis:
+    image: redis:7-alpine
+volumes:
+  pgdata:
