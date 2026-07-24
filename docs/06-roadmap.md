@@ -35,19 +35,37 @@ delete-imported-data flows; parser fixture suite (16 fixture classes per spec).
 Share extension (App Group), document picker, VisionKit scan; OCR extraction → shared
 pipeline; import review; secure file lifecycle (protection class, purge, `deletionDate`).
 
+Implementation note: the protected import/OCR/document-picker pipeline is present. The
+standalone share-extension target remains an Apple Developer/App Group signing gate; shared
+`.eml` and document imports use the same pipeline in the main app meanwhile.
+
 ## Phase 5 — Backend & remote sync
 TypeScript service per integration doc; token vault; Gmail watch + Graph webhooks; APNs
 silent sync nudges; BGAppRefreshTask + backoff; last-sync status UI; idempotent ingestion.
 **External gates:** hosting, APNs key, Pub/Sub topic.
 
+Implementation note: `backend/` contains the versioned API surface, rate limiting, redacted
+logging, envelope-encryption token vault, webhook replay protection, PostgreSQL schema,
+Docker topology, and security tests. Deployment adapters and live watch/APNs credentials
+remain external gates.
+
 ## Phase 6 — Microsoft integration
 MSAL dependency (justified per ADR-6); MicrosoftProvider over Graph delta queries;
 multi-account support surfaced in accounts UI; provider-parity fixture tests.
+
+Implementation note: the Graph provider and delta/search seams are implemented and tested.
+Interactive MSAL sign-in requires the Entra registration and MSAL dependency at integration
+time.
 
 ## Phase 7 — Hardening & submission
 Security review vs threat model; privacy manifest + labels; performance (launch, scroll,
 sync memory); accessibility audit; localization scaffolding (String Catalogs already on);
 App Store assets; TestFlight checklist; data-migration tests (SchemaV1→V2 dry run).
+
+Implementation note: privacy manifest, closed-schema privacy analytics, release-gate
+checklist, existing accessibility semantics, and schema migration plan are present. Physical
+device audits, legal URLs, App Store assets, and TestFlight submission are release actions,
+not locally synthesizable code.
 
 ## Testing map (spec → suite)
 Unit: CoreModelsTests, PersistenceTests, NotificationsTests (P2), DetectionTests (P3).

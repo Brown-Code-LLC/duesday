@@ -16,6 +16,9 @@ struct RootView: View {
     let storageWarning: String?
     let appLock: AppLockModel
     let scheduler: ReminderScheduler
+    /// Called when the app backgrounds so the next opportunistic refresh is
+    /// requested (BGAppRefreshTask).
+    var onEnterBackground: () -> Void = {}
 
     @AppStorage("duesday.onboarding.complete") private var onboardingComplete = false
     @State private var isPresentingSettings = false
@@ -75,6 +78,7 @@ struct RootView: View {
             switch newPhase {
             case .background:
                 appLock.lock()
+                onEnterBackground()
             case .active:
                 refreshReminders()
             default:

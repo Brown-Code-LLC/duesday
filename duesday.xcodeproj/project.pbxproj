@@ -265,6 +265,8 @@
 				DEVELOPMENT_TEAM = V9RLAJRWS8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Duesday can add renewal dates you choose to your calendar.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Duesday uses Face ID to lock the app and protect your subscription data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -298,6 +300,8 @@
 				DEVELOPMENT_TEAM = V9RLAJRWS8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Duesday can add renewal dates you choose to your calendar.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Duesday uses Face ID to lock the app and protect your subscription data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

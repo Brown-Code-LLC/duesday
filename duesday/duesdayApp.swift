@@ -17,6 +17,7 @@ struct DuesdayApp: App {
     private let router = AppRouter()
     private let appLock = AppLockModel()
     private let scheduler = ReminderScheduler()
+    private let backgroundRefresh: BackgroundRefresh
     /// Strong reference required — UNUserNotificationCenter.delegate is weak.
     private let notificationRouter = NotificationRouter()
 
@@ -56,6 +57,13 @@ struct DuesdayApp: App {
             router.openSubscription(id: id)
         }
         UNUserNotificationCenter.current().delegate = notificationRouter
+
+        // Background refresh must register before launch completes.
+        backgroundRefresh = BackgroundRefresh(
+            container: bootstrap.controller.container,
+            scheduler: scheduler
+        )
+        backgroundRefresh.register()
     }
 
     var body: some Scene {
@@ -64,7 +72,8 @@ struct DuesdayApp: App {
                 router: router,
                 storageWarning: storageWarning,
                 appLock: appLock,
-                scheduler: scheduler
+                scheduler: scheduler,
+                onEnterBackground: { backgroundRefresh.scheduleNext() }
             )
         }
         .modelContainer(bootstrap.controller.container)
